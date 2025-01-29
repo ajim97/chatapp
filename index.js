@@ -74,7 +74,7 @@ const sendNotification = async (userId, message) => {
 
 // Root API
 app.get('/', (req, res) => {
-    res.send('🚀 Welcome to the Chat App API!');
+    res.send('🚀 Welcome to the Chat App API! hello world');
 });
 
 // Socket.IO Chat System
