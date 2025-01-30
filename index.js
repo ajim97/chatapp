@@ -1,13 +1,13 @@
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
-const mongoose = require('mongoose');
-const cors = require('cors');
 const admin = require('firebase-admin');
+const cors = require('cors');
 require('dotenv').config();
 
 const app = express();
 const server = http.createServer(app);
+
 const io = new Server(server, {
     cors: {
         origin: '*',
@@ -17,83 +17,65 @@ const io = new Server(server, {
 
 // Middleware
 app.use(cors());
-app.use(express.json());  
+app.use(express.json());
 
-// MongoDB Connection
-mongoose.connect(process.env.MONGO_URI)
-    .then(() => console.log('✅ MongoDB connected'))
-    .catch((err) => console.error('❌ MongoDB connection error:', err));
-
-// Firebase Service Account (Decoded from .env)
-const serviceAccountJSON = Buffer.from(process.env.FIREBASE_SERVICE_ACCOUNT_BASE64, "base64").toString("utf-8");
-
+// Decode Base64 JSON from .env and Initialize Firebase
+const firebaseAdminConfig = JSON.parse(
+    Buffer.from(process.env.FIREBASE_ADMIN_SDK_BASE64, 'base64').toString('utf8')
+);
 admin.initializeApp({
-    credential: admin.credential.cert(JSON.parse(serviceAccountJSON)),
+    credential: admin.credential.cert(firebaseAdminConfig),
 });
 
-// Store User FCM Tokens (Use Database in Production)
-const userTokens = {}; 
+console.log('Firebase Admin SDK Initialized Successfully');
 
-// Save FCM Token API
-app.post('/save-token', (req, res) => {
-    const { userId, token } = req.body; 
-    if (userId && token) {
-        userTokens[userId] = token;
-        console.log(`✅ Token saved for user: ${userId}`);
-        res.json({ message: "Token saved successfully!" });
-    } else {
-        res.status(400).json({ error: "Invalid userId or token" });
-    }
-});
+// Store user FCM tokens
+let userTokens = {};
 
-// Function to Send Push Notification
-const sendNotification = async (userId, message) => {
-    const userToken = userTokens[userId];
-
-    if (!userToken) {
-        console.log("❌ No FCM Token found for user:", userId);
-        return;
-    }
-
-    const payload = {
-        notification: {
-            title: "New Message",
-            body: message,
-            sound: "default"
-        },
-        token: userToken,
-    };
-
-    try {
-        await admin.messaging().send(payload);
-        console.log("✅ Notification sent successfully!");
-    } catch (error) {
-        console.error("❌ Error sending notification:", error);
-    }
-};
-
-// Root API
-app.get('/', (req, res) => {
-    res.send('🚀 Welcome to the Chat App API! hello world');
-});
-
-// Socket.IO Chat System
+// Handle Socket.IO Connections
 io.on('connection', (socket) => {
-    console.log(`✅ User connected: ${socket.id}`);
+    console.log('A user connected:', socket.id);
 
+    // Store the user's FCM token
+    socket.on('register_fcm_token', (data) => {
+        userTokens[data.username] = data.fcmToken;
+        console.log(`FCM Token registered for ${data.username}`);
+    });
+
+    // Handle message sending
     socket.on('send_message', async (data) => {
         io.emit('receive_message', data);
-        await sendNotification(data.user, data.message); // Send Push Notification
+
+        // Send FCM notification
+        if (data.username in userTokens) {
+            const payload = {
+                notification: {
+                    title: `New Message from ${data.user}`,
+                    body: data.message || "New media message",
+                },
+                token: userTokens[data.username],
+            };
+
+            try {
+                await admin.messaging().send(payload);
+                console.log(`FCM notification sent to ${data.username}`);
+            } catch (error) {
+                console.error("Error sending FCM notification:", error);
+            }
+        }
     });
 
+    // Handle disconnect
     socket.on('disconnect', () => {
-        console.log(`❌ User disconnected: ${socket.id}`);
+        console.log('A user disconnected:', socket.id);
     });
+});
+app.get('/', (req, res) => {
+    res.send('Welcome to the Chat App API!');
 });
 
 // Start Server
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
-    console.log(`🚀 Server running on http://localhost:${PORT}`);
+    console.log(`Server running on http://localhost:${PORT}`);
 });
-
