@@ -17,53 +17,66 @@ app.use(cors());
 app.use(express.json());
 
 // Firebase Admin SDK Initialization
-const serviceAccount = JSON.parse(Buffer.from(process.env.FIREBASE_ADMIN_SDK_BASE64, 'base64').toString('utf8'));
-admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
-});
-console.log("Firebase Admin SDK Initialized Successfully");
+let serviceAccount;
+try {
+    serviceAccount = JSON.parse(Buffer.from(process.env.FIREBASE_ADMIN_SDK_BASE64, 'base64').toString('utf8'));
+    admin.initializeApp({ credential: admin.credential.cert(serviceAccount) });
+    console.log("✅ Firebase Admin SDK Initialized");
+} catch (error) {
+    console.error("❌ Firebase initialization failed:", error);
+}
 
 // MongoDB Connection
 mongoose.connect(process.env.MONGO_URI, { useNewUrlParser: true, useUnifiedTopology: true })
-    .then(() => console.log('MongoDB connected'))
-    .catch(err => console.error('MongoDB connection error:', err));
+    .then(() => console.log('✅ MongoDB connected'))
+    .catch(err => console.error('❌ MongoDB connection error:', err));
 
 // Message Schema & Model
 const MessageSchema = new mongoose.Schema({
-    user: String,  
-    message: String,
-    media: String,
-    timestamp: String,
-    fcmToken: String, // Store user's FCM Token
+    user: { type: String, required: true, trim: true },
+    message: { type: String, trim: true, default: '' },
+    media: { type: String, trim: true, default: '' },
+    timestamp: { type: Date, default: Date.now },
+    fcmToken: { type: String, trim: true },
 });
+MessageSchema.index({ timestamp: 1 }); // Optimized index for querying
 const Message = mongoose.model('Message', MessageSchema);
 
-// Root Route
-app.get('/', (req, res) => {
-    res.send('Welcome to the Chat App API! md akaram nadaf');
+// API Endpoint to Fetch Messages
+app.get('/messages', async (req, res) => {
+    try {
+        const messages = await Message.find().sort({ timestamp: -1 }).limit(20);
+        res.json(messages);
+    } catch (error) {
+        res.status(500).json({ error: 'Failed to fetch messages' });
+    }
 });
 
-// Save & Broadcast Messages
+// WebSocket Communication
 io.on('connection', (socket) => {
-    console.log('A user connected:', socket.id);
+    console.log('🔵 User connected:', socket.id);
 
     socket.on('send_message', async (data) => {
-        const newMessage = new Message(data);
-        await newMessage.save();
-        io.emit('receive_message', data);
+        try {
+            const newMessage = new Message(data);
+            await newMessage.save();
+            io.emit('receive_message', data);
 
-        // Send Push Notification
-        if (data.fcmToken) {
-            sendPushNotification(data.fcmToken, data.user, data.message);
+            // Send Push Notification
+            if (data.fcmToken) {
+                sendPushNotification(data.fcmToken, data.user, data.message);
+            }
+        } catch (error) {
+            console.error("❌ Error saving message:", error);
         }
     });
 
     socket.on('disconnect', () => {
-        console.log('A user disconnected:', socket.id);
+        console.log('🔴 User disconnected:', socket.id);
     });
 });
 
-// Function to Send Push Notification
+// Function to Send Push Notifications
 const sendPushNotification = async (token, user, message) => {
     try {
         await admin.messaging().send({
@@ -72,18 +85,19 @@ const sendPushNotification = async (token, user, message) => {
                 title: `New message from ${user}`,
                 body: message || 'You have a new message!',
             },
-            android: {
-                notification: { channelId: 'default_channel' },
-            },
+            android: { notification: { channelId: 'default_channel' } },
         });
-        console.log('Push Notification Sent');
+        console.log('✅ Push Notification Sent');
     } catch (error) {
-        console.error('Error sending push notification:', error);
+        console.error('❌ Error sending push notification:', error);
     }
 };
+app.get('/', (req, res) => {
+    res.send('Welcome to the Chat App API! md akaram nadaf Harine');
+});
 
 // Start Server
 const PORT = process.env.PORT || 5000;
 server.listen(PORT, () => {
-    console.log(`Server running on http://localhost:${PORT}`);
+    console.log(`🚀 Server running on http://localhost:${PORT}`);
 });
