@@ -26,7 +26,7 @@ console.log("✅ Firebase Admin SDK Initialized Successfully");
 
 // ✅ Root API Route
 app.get('/', (req, res) => {
-    res.send('Welcome to the Chat App API! 🌍');
+    res.send('Welcome to the Chat App API! Hello 🌍 Welcome to My Chat App Api');
 });
 
 // ✅ Handle WebSocket Connections
