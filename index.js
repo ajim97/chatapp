@@ -26,7 +26,7 @@ console.log("✅ Firebase Admin SDK Initialized Successfully");
 
 // ✅ Root API Route
 app.get('/', (req, res) => {
-    res.send('Welcome to the Chat App API! Hello 🌍 Welcome to My New Chat App Api');
+    res.send('Welcome to the Chat App API! Hello🌍');
 });
 
 // ✅ Handle WebSocket Connections
@@ -51,18 +51,28 @@ io.on('connection', (socket) => {
     });
 });
 
-// ✅ Function to Send Push Notifications
+// ✅ Function to Send Push Notifications (Handles Foreground, Background & Terminated)
 const sendPushNotification = async (token, user, message) => {
     try {
         await admin.messaging().send({
             token,
-            notification: {
+            notification: { // ✅ This ensures push notifications work when app is terminated
                 title: `New message from ${user}`,
                 body: message || 'You have a new message!',
             },
+            data: { // ✅ Extra data for background processing
+                user: user,
+                message: message || '',
+            },
             android: {
+                priority: 'high',
                 notification: { channelId: 'default_channel' },
             },
+            apns: { // iOS configuration
+                payload: {
+                    aps: { alert: { title: `New message from ${user}`, body: message || 'You have a new message!' } }
+                }
+            }
         });
         console.log('✅ Push Notification Sent');
     } catch (error) {
