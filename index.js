@@ -22,25 +22,22 @@ const serviceAccount = JSON.parse(
 admin.initializeApp({
     credential: admin.credential.cert(serviceAccount),
 });
-console.log("✅ Firebase Admin SDK Initialized Successfully");
+console.log("✅ Firebase Initialized");
 
-// ✅ Root API Route
+// ✅ API Route
 app.get('/', (req, res) => {
     res.send('Welcome to the Chat App API! Hello🌍');
 });
 
 // ✅ Handle WebSocket Connections
 io.on('connection', (socket) => {
-    console.log('🔵 A user connected:', socket.id);
+    console.log('🔵 User connected:', socket.id);
 
     socket.on('send_message', async (data) => {
-        console.log('📥 Received Message:', data);
-
-        // Broadcast message to all clients
+        console.log('📥 Message Received:', data);
         io.emit('receive_message', data);
-        console.log("📤 Message Broadcasted to Clients:", data);
+        console.log("📤 Message Broadcasted");
 
-        // Send push notification
         if (data.fcmToken) {
             sendPushNotification(data.fcmToken, data.user, data.message);
         }
@@ -51,32 +48,21 @@ io.on('connection', (socket) => {
     });
 });
 
-// ✅ Function to Send Push Notifications (Handles Foreground, Background & Terminated)
+// ✅ Send Push Notification
 const sendPushNotification = async (token, user, message) => {
     try {
         await admin.messaging().send({
             token,
-            notification: { // ✅ This ensures push notifications work when app is terminated
+            notification: {
                 title: `New message from ${user}`,
                 body: message || 'You have a new message!',
             },
-            data: { // ✅ Extra data for background processing
-                user: user,
-                message: message || '',
-            },
-            android: {
-                priority: 'high',
-                notification: { channelId: 'default_channel' },
-            },
-            apns: { // iOS configuration
-                payload: {
-                    aps: { alert: { title: `New message from ${user}`, body: message || 'You have a new message!' } }
-                }
-            }
+            android: { priority: 'high', notification: { channelId: 'default_channel', sound: "default" } },
+            apns: { payload: { aps: { alert: { title: `New message from ${user}`, body: message || 'You have a new message!' }, sound: 'default' } } }
         });
         console.log('✅ Push Notification Sent');
     } catch (error) {
-        console.error('❌ Error Sending Push Notification:', error);
+        console.error('❌ Error Sending Notification:', error);
     }
 };
 
