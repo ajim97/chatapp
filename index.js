@@ -22,73 +22,46 @@ const serviceAccount = JSON.parse(
 admin.initializeApp({
     credential: admin.credential.cert(serviceAccount),
 });
-console.log("✅ Firebase Admin SDK Initialized Successfully");
+console.log("✅ Firebase Initialized");
 
-// ✅ Root API Route
-app.get('/', (req, res) => {
-    res.send('Welcome to the Chat App API! 🚀');
-});
-
-// ✅ Handle WebSocket Connections
+// ✅ WebSocket Connection
 io.on('connection', (socket) => {
-    console.log('🔵 A user connected:', socket.id);
+    console.log('🔵 User Connected:', socket.id);
 
     socket.on('send_message', async (data) => {
         console.log('📥 Received Message:', data);
-
-        // Broadcast message to all clients
         io.emit('receive_message', data);
-        console.log("📤 Message Broadcasted to Clients:", data);
 
-        // Send push notification
         if (data.fcmToken) {
             sendPushNotification(data.fcmToken, data.user, data.message);
         }
     });
 
-    socket.on('disconnect', () => {
-        console.log('🔴 User Disconnected:', socket.id);
-    });
+    socket.on('disconnect', () => console.log('🔴 User Disconnected:', socket.id));
 });
 
-// ✅ Function to Send Push Notifications
+// ✅ Send Push Notifications
 const sendPushNotification = async (token, user, message) => {
     try {
         await admin.messaging().send({
             token,
-            notification: { // ✅ Required for background & terminated state
+            notification: {
                 title: `New message from ${user}`,
                 body: message || 'You have a new message!',
             },
-            data: { // ✅ Data payload (for background handling)
-                user: user,
-                message: message || '',
-                click_action: 'FLUTTER_NOTIFICATION_CLICK',
-            },
-            android: {
-                priority: 'high',
-                notification: {
-                    channelId: 'default_channel',
-                    sound: 'default',
-                },
-            },
-            apns: { // ✅ iOS configuration
-                payload: {
-                    aps: {
-                        alert: { title: `New message from ${user}`, body: message || 'You have a new message!' },
-                        sound: 'default',
-                    }
-                }
-            }
+            android: { priority: 'high', notification: { channelId: 'default_channel' } },
+            apns: { payload: { aps: { alert: { title: `New message from ${user}`, body: message || 'You have a new message!' } } } }
         });
         console.log('✅ Push Notification Sent');
     } catch (error) {
         console.error('❌ Error Sending Push Notification:', error);
     }
 };
+// ✅ Root API Route
+app.get('/', (req, res) => {
+    res.send('Welcome to the Chat App API! Hello🌍 welcome to my new xhat sevrer');
+});
 
 // ✅ Start Server
 const PORT = process.env.PORT || 5000;
-server.listen(PORT, () => {
-    console.log(`🚀 Server Running on http://localhost:${PORT}`);
-});
+server.listen(PORT, () => console.log(`🚀 Server Running on http://localhost:${PORT}`));
