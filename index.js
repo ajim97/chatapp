@@ -1,77 +1,37 @@
-const express = require('express');
-const http = require('http');
-const { Server } = require('socket.io');
-const cors = require('cors');
-const admin = require('firebase-admin');
-require('dotenv').config();
+const express = require("express");
+const multer = require("multer");
+const cors = require("cors");
 
 const app = express();
-const server = http.createServer(app);
-const io = new Server(server, {
-    cors: { origin: '*', methods: ['GET', 'POST'] },
-});
-
-// ✅ Middleware
 app.use(cors());
 app.use(express.json());
 
-// ✅ Firebase Admin SDK Initialization
-const serviceAccount = JSON.parse(
-    Buffer.from(process.env.FIREBASE_ADMIN_SDK_BASE64, 'base64').toString('utf8')
-);
-admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
-});
-console.log("✅ Firebase Admin SDK Initialized Successfully");
+const storage = multer.memoryStorage();
+const upload = multer({ storage: storage });
 
-// ✅ Root API Route
-app.get('/', (req, res) => {
-    res.send('Welcome to the Chat App API! 🌍 hello world ');
-});
+let stories = []; // In-memory storage for stories
 
-// ✅ Handle WebSocket Connections
-io.on('connection', (socket) => {
-    console.log('🔵 A user connected:', socket.id);
+// Upload a new story (Image, Video, or Text)
+app.post("/stories", upload.single("file"), (req, res) => {
+    const story = {
+        id: Date.now(),
+        type: req.file ? (req.file.mimetype.startsWith("video/") ? "video" : "image") : "text",
+        content: req.file ? req.file.buffer.toString("base64") : req.body.text,
+        timestamp: Date.now(),
+    };
+    stories.push(story);
 
-    socket.on('send_message', async (data) => {
-        console.log('📥 Received Message:', data);
+    // Auto-remove after 24 hours
+    setTimeout(() => {
+        stories = stories.filter(s => s.id !== story.id);
+    }, 24 * 60 * 60 * 1000);
 
-        // Broadcast message to all clients
-        io.emit('receive_message', data);
-        console.log("📤 Message Broadcasted to Clients:", data);
-
-        // Send push notification
-        if (data.fcmToken) {
-            sendPushNotification(data.fcmToken, data.user, data.message);
-        }
-    });
-
-    socket.on('disconnect', () => {
-        console.log('🔴 User Disconnected:', socket.id);
-    });
+    res.json({ message: "Story added", story });
 });
 
-// ✅ Function to Send Push Notifications
-const sendPushNotification = async (token, user, message) => {
-    try {
-        await admin.messaging().send({
-            token,
-            notification: {
-                title: `New message from ${user}`,
-                body: message || 'You have a new message!',
-            },
-            android: {
-                notification: { channelId: 'default_channel' },
-            },
-        });
-        console.log('✅ Push Notification Sent');
-    } catch (error) {
-        console.error('❌ Error Sending Push Notification:', error);
-    }
-};
-
-// ✅ Start Server
-const PORT = process.env.PORT || 5000;
-server.listen(PORT, () => {
-    console.log(`🚀 Server Running on http://localhost:${PORT}`);
+// Get all stories
+app.get("/stories", (req, res) => {
+    res.json(stories);
 });
+
+app.listen(3000, () => console.log("Server running on port 3000"));
