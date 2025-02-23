@@ -70,7 +70,7 @@ app.get("/stories", (req, res) => {
 
 // Default route for root URL "/"
 app.get("/", (req, res) => {
-    res.send("🚀 Welcome to the Story API! Use /stories to upload or fetch stories.");
+    res.send("🚀 Welcome to the Story API! Use /stories to upload or fetch stories. hello world welcome to my new App and new website");
 });
 
 // Start server
