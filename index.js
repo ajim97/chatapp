@@ -1,80 +1,81 @@
-require("dotenv").config(); // Load environment variables
+require("dotenv").config();
 const express = require("express");
 const multer = require("multer");
 const cors = require("cors");
 const admin = require("firebase-admin");
-const { getStorage } = require("firebase-admin/storage");
-const path = require("path");
+const { Storage } = require('@google-cloud/storage');
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Initialize Firebase using the .env path
-const serviceAccount = require(process.env.FIREBASE_CREDENTIALS);
+// Load Firebase credentials from the environment variable
+const serviceAccountJSON = process.env.FIREBASE_CREDENTIALS;
+
+if (!serviceAccountJSON) {
+    throw new Error("❌ Firebase credentials not found in environment variables");
+}
+
+// Parse the JSON string into an object
+const serviceAccount = JSON.parse(serviceAccountJSON);
+
+// Initialize Firebase Admin SDK
 admin.initializeApp({
     credential: admin.credential.cert(serviceAccount),
-    storageBucket: process.env.FIREBASE_STORAGE_BUCKET,
+    storageBucket: "valute3.appspot.com",  // Replace with your Firebase project storage bucket
 });
-const bucket = getStorage().bucket();
 
-const storage = multer.memoryStorage();
-const upload = multer({ storage: storage });
+const storage = new Storage();
+const bucket = storage.bucket("valute3.appspot.com");  // Replace with your Firebase project storage bucket
+
+// Set up Multer to handle file uploads
+const multerStorage = multer.memoryStorage();
+const upload = multer({ storage: multerStorage });
 
 let stories = [];
 
-// Upload story to Firebase Storage
+// Route to upload a new story (image, video, or text)
 app.post("/stories", upload.single("file"), async (req, res) => {
     try {
-        let story;
+        const story = {
+            id: Date.now(),
+            type: req.file ? (req.file.mimetype.startsWith("image") ? "image" : "video") : "text",
+            content: req.file ? req.file.buffer.toString("base64") : req.body.text,
+            timestamp: Date.now(),
+        };
+
+        // Upload the file to Firebase Storage if present
         if (req.file) {
-            const fileName = `stories/${Date.now()}_${req.file.originalname}`;
+            const fileName = `stories/${story.id}-${req.file.originalname}`;
             const file = bucket.file(fileName);
-            await file.save(req.file.buffer, { contentType: req.file.mimetype });
-
-            // Get public URL
-            const [url] = await file.getSignedUrl({ action: "read", expires: "01-01-2100" });
-
-            console.log(`✅ Uploaded file URL: ${url}`);
-
-            story = {
-                id: Date.now(),
-                type: req.file.mimetype.startsWith("image") ? "image" : "video",
-                content: url,
-                timestamp: Date.now(),
-            };
-        } else {
-            story = {
-                id: Date.now(),
-                type: "text",
-                content: req.body.text,
-                timestamp: Date.now(),
-            };
+            await file.save(req.file.buffer, {
+                metadata: {
+                    contentType: req.file.mimetype,
+                },
+            });
+            story.fileUrl = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
         }
 
         stories.push(story);
-        console.log(`📥 New Story Added: ${story.content}`);
+
+        // Auto-remove after 24 hours
+        setTimeout(() => {
+            stories = stories.filter(s => s.id !== story.id);
+        }, 24 * 60 * 60 * 1000);
 
         res.json({ message: "Story added", story });
     } catch (error) {
-        console.error("❌ Error uploading file:", error);
-        res.status(500).json({ error: "Upload failed" });
+        console.error("Error uploading story:", error);
+        res.status(500).json({ error: "Error uploading story" });
     }
 });
 
-// Get all stories
+// Route to get all stories
 app.get("/stories", (req, res) => {
-    console.log("📤 Sent all stories to client");
     res.json(stories);
 });
 
-// Default route for root URL "/"
-app.get("/", (req, res) => {
-    res.send("🚀 Welcome to the Story API! Use /stories to upload or fetch stories. hello world welcome to my new App and new website");
-});
-
-// Start server
-const PORT = 3000;
-app.listen(PORT, () => {
-    console.log(`🚀 Server running at: http://localhost:${PORT}/`);
+// Start the server
+app.listen(3000, () => {
+    console.log("✅ Server is running on port 3000");
 });
