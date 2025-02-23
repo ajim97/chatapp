@@ -69,7 +69,10 @@ app.post("/stories", upload.single("file"), async (req, res) => {
         res.status(500).json({ error: "Error uploading story" });
     }
 });
-
+// Default route for root URL "/"
+app.get("/", (req, res) => {
+    res.send("🚀 Welcome to the Story API! Use /stories to upload or fetch stories.");
+});
 // Route to get all stories
 app.get("/stories", (req, res) => {
     res.json(stories);
