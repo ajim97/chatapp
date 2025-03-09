@@ -1,84 +1,48 @@
-require("dotenv").config();
-const express = require("express");
-const multer = require("multer");
-const cors = require("cors");
-const admin = require("firebase-admin");
-const { Storage } = require('@google-cloud/storage');
+const express = require('express');
+const http = require('http');
+const { Server } = require('socket.io');
+const mongoose = require('mongoose');
+const cors = require('cors');
+require('dotenv').config();
 
-const app = express();
+const app = express();   
+const server = http.createServer(app);
+const io = new Server(server, {
+    cors: {
+        origin: '*',
+        methods: ['GET', 'POST'],
+    },
+});
+
+// Middleware
 app.use(cors());
 app.use(express.json());
 
-// Load Firebase credentials from the environment variable
-const serviceAccountJSON = process.env.FIREBASE_CREDENTIALS;
+// MongoDB Connection
+mongoose.connect(process.env.MONGO_URI)
+    .then(() => console.log('MongoDB connected'))
+    .catch((err) => console.error('MongoDB connection error:', err));
 
-if (!serviceAccountJSON) {
-    throw new Error("❌ Firebase credentials not found in environment variables");
-}
-
-// Parse the JSON string into an object
-const serviceAccount = JSON.parse(serviceAccountJSON);
-
-// Initialize Firebase Admin SDK
-admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
-    storageBucket: "valute3.appspot.com",  // Replace with your Firebase project storage bucket
+// Root Route
+app.get('/', (req, res) => {
+    res.send('Welcome to the Chat App API!');
 });
 
-const storage = new Storage();
-const bucket = storage.bucket("valute3.appspot.com");  // Replace with your Firebase project storage bucket
+// Socket.IO Logic
+io.on('connection', (socket) => {
+    console.log('A user connected:', socket.id);
 
-// Set up Multer to handle file uploads
-const multerStorage = multer.memoryStorage();
-const upload = multer({ storage: multerStorage });
+    socket.on('send_message', (data) => {
+        io.emit('receive_message', data);
+    });
 
-let stories = [];
-
-// Route to upload a new story (image, video, or text)
-app.post("/stories", upload.single("file"), async (req, res) => {
-    try {
-        const story = {
-            id: Date.now(),
-            type: req.file ? (req.file.mimetype.startsWith("image") ? "image" : "video") : "text",
-            content: req.file ? req.file.buffer.toString("base64") : req.body.text,
-            timestamp: Date.now(),
-        };
-
-        // Upload the file to Firebase Storage if present
-        if (req.file) {
-            const fileName = `stories/${story.id}-${req.file.originalname}`;
-            const file = bucket.file(fileName);
-            await file.save(req.file.buffer, {
-                metadata: {
-                    contentType: req.file.mimetype,
-                },
-            });
-            story.fileUrl = `https://storage.googleapis.com/${bucket.name}/${fileName}`;
-        }
-
-        stories.push(story);
-
-        // Auto-remove after 24 hours
-        setTimeout(() => {
-            stories = stories.filter(s => s.id !== story.id);
-        }, 24 * 60 * 60 * 1000);
-
-        res.json({ message: "Story added", story });
-    } catch (error) {
-        console.error("Error uploading story:", error);
-        res.status(500).json({ error: "Error uploading story" });
-    }
-});
-// Default route for root URL "/"
-app.get("/", (req, res) => {
-    res.send("🚀 Welcome to the Story API! Use /stories to upload or fetch stories.");
-});
-// Route to get all stories
-app.get("/stories", (req, res) => {
-    res.json(stories);
+    socket.on('disconnect', () => {
+        console.log('A user disconnected:', socket.id);
+    });
 });
 
-// Start the server
-app.listen(3000, () => {
-    console.log("✅ Server is running on port 3000");
+// Start Server
+const PORT = process.env.PORT || 5000;
+server.listen(PORT, () => {
+    console.log(`Server running on http://localhost:${PORT}`);
 });
