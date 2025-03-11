@@ -36,7 +36,7 @@ mongoose
 
 // Root Route
 app.get('/', (req, res) => {
-  res.send('Welcome to the Chat App API!');
+  res.send('Welcome to the Chat App API! Hello world welcome to my new website and  my new App');
 });
 
 // Socket.IO Logic
