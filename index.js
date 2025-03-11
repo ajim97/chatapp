@@ -19,9 +19,12 @@ const io = new Server(server, {
 app.use(cors());
 app.use(express.json());
 
+// Decode base64 Firebase service account key
+const serviceAccount = JSON.parse(Buffer.from(process.env.FIREBASE_SERVICE_ACCOUNT_KEY, 'base64').toString('utf8'));
+
 // Initialize Firebase Admin SDK
 admin.initializeApp({
-    credential: admin.credential.cert(JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY)),
+    credential: admin.credential.cert(serviceAccount),
 });
 
 // Socket.IO Logic
