@@ -25,7 +25,7 @@ mongoose.connect(process.env.MONGO_URI)
 
 // Root Route
 app.get('/', (req, res) => {
-    res.send('Welcome to the Chat App API!');
+    res.send('Welcome to the Chat App API! Hello world welcome to my new website and my new app');
 });
 
 // Socket.IO Logic
