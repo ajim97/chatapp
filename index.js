@@ -1,9 +1,16 @@
-require('dotenv').config();
 const express = require('express');
 const http = require('http');
 const { Server } = require('socket.io');
-const cors = require('cors');
 const admin = require('firebase-admin');
+const cors = require('cors');
+require('dotenv').config();
+
+// ✅ Initialize Firebase Admin with service account JSON from Render ENV
+const serviceAccount = JSON.parse(Buffer.from(process.env.FIREBASE_SERVICE_ACCOUNT, 'base64').toString('utf-8'));
+
+admin.initializeApp({
+    credential: admin.credential.cert(serviceAccount),
+});
 
 const app = express();
 const server = http.createServer(app);
@@ -11,82 +18,60 @@ const io = new Server(server, {
     cors: { origin: '*', methods: ['GET', 'POST'] },
 });
 
+// Middleware
 app.use(cors());
 app.use(express.json());
 
-// ✅ Decode Base64 Firebase Credentials (From Render Environment Variable)
-if (!process.env.FIREBASE_SERVICE_ACCOUNT) {
-    console.error("❌ FIREBASE_SERVICE_ACCOUNT is missing in environment variables!");
-    process.exit(1);
-}
-
-const serviceAccount = JSON.parse(
-    Buffer.from(process.env.FIREBASE_SERVICE_ACCOUNT, 'base64').toString('utf-8')
-);
-
-// ✅ Initialize Firebase Admin SDK
-admin.initializeApp({
-    credential: admin.credential.cert(serviceAccount),
-});
-
-// ✅ Store user FCM tokens in memory
+// Store FCM Tokens
 const userTokens = {};
 
-// 🔹 API to Register FCM Tokens
+// ✅ Register FCM Token
 app.post('/register-token', (req, res) => {
     const { username, fcmToken } = req.body;
-
     if (username && fcmToken) {
         userTokens[username] = fcmToken;
         console.log(`✅ FCM Token registered for ${username}`);
-        res.status(200).json({ message: 'Token registered successfully' });
+        res.status(200).send({ success: true });
     } else {
-        res.status(400).json({ error: 'Invalid data' });
+        res.status(400).send({ success: false, message: 'Invalid data' });
     }
 });
 
-// 🔹 Socket.io Chat Functionality
+// ✅ Handle Socket.IO Connections
 io.on('connection', (socket) => {
-    console.log('✅ User connected:', socket.id);
+    console.log(`✅ User connected: ${socket.id}`);
 
-    socket.on('send_message', async (data) => {
-        io.emit('receive_message', data); // Broadcast message
+    socket.on('send_message', (data) => {
+        io.emit('receive_message', data);
 
-        // 🔥 Send push notification if recipient's FCM token exists
+        // ✅ Send Push Notification
         if (userTokens[data.user]) {
-            const message = {
+            const payload = {
                 token: userTokens[data.user],
                 notification: {
                     title: 'New Message',
                     body: `${data.user}: ${data.message}`,
                 },
-                android: {
-                    priority: 'high',
-                    notification: {
-                        sound: 'default',
-                    },
-                },
-                apns: {
-                    payload: {
-                        aps: { sound: 'default' },
-                    },
+                data: {
+                    user: data.user,
+                    message: data.message,
+                    timestamp: data.timestamp,
                 },
             };
 
-            try {
-                await admin.messaging().send(message);
-                console.log(`📩 Push notification sent to ${data.user}`);
-            } catch (error) {
-                console.error('❌ Error sending notification:', error);
-            }
+            admin.messaging().send(payload)
+                .then(() => console.log(`📩 Push notification sent to ${data.user}`))
+                .catch((err) => console.error('❌ FCM Error:', err));
         }
     });
 
     socket.on('disconnect', () => {
-        console.log('❌ User disconnected:', socket.id);
+        console.log(`❌ User disconnected: ${socket.id}`);
     });
 });
 
-// 🔥 Start Server
-const PORT = process.env.PORT || 5000;
-server.listen(PORT, () => console.log(`🚀 Server running on http://localhost:${PORT}`));
+// Start Server
+const PORT = process.env.PORT || 10000;
+server.listen(PORT, () => {
+    console.log(`🚀 Server running on http://localhost:${PORT}`);
+});
