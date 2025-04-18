@@ -1,44 +1,67 @@
-// ===================
-// Backend: server.js
-// ===================
-
-const express = require("express");
-const cors = require("cors");
-const ytdl = require("ytdl-core");
-
+const express = require('express');
+const ytdl = require('ytdl-core');
+const cors = require('cors');
 const app = express();
+
+const PORT = process.env.PORT || 5000;
+
 app.use(cors());
 
-app.get("/formats", async (req, res) => {
-  const videoURL = req.query.url;
-  if (!ytdl.validateURL(videoURL)) {
-    return res.status(400).json({ error: "Invalid URL" });
-  }
-
-  const info = await ytdl.getInfo(videoURL);
-  const formats = ytdl.filterFormats(info.formats, 'videoandaudio');
-
-  const filtered = formats
-    .filter(f => f.container === 'mp4' && f.qualityLabel)
-    .map(f => ({
-      quality: f.qualityLabel,
-      itag: f.itag
-    }));
-
-  res.json(filtered);
+app.get('/', (req, res) => {
+  res.send('YouTube Downloader Backend is running');
 });
 
-app.get("/download", async (req, res) => {
+// Get available formats
+app.get('/formats', async (req, res) => {
+  const videoUrl = req.query.url;
+  if (!videoUrl || !ytdl.validateURL(videoUrl)) {
+    return res.status(400).json({ error: 'Invalid YouTube URL' });
+  }
+
+  try {
+    const info = await ytdl.getInfo(videoUrl);
+    const formats = ytdl.filterFormats(info.formats, 'videoandaudio')
+      .filter(f => f.container === 'mp4' && f.hasAudio && f.hasVideo && f.qualityLabel)
+      .map(f => ({
+        quality: f.qualityLabel,
+        itag: f.itag,
+        contentLength: f.contentLength
+      }));
+
+    res.json(formats);
+  } catch (error) {
+    console.error('Format error:', error);
+    res.status(500).json({ error: 'Failed to retrieve formats' });
+  }
+});
+
+// Stream video download by itag
+app.get('/download', async (req, res) => {
   const { url, itag } = req.query;
-  if (!ytdl.validateURL(url)) {
-    return res.status(400).json({ error: "Invalid URL" });
+
+  if (!url || !itag || !ytdl.validateURL(url)) {
+    return res.status(400).json({ error: 'Invalid parameters' });
   }
 
-  const info = await ytdl.getInfo(url);
-  const title = info.videoDetails.title.replace(/[\W_]+/g, "_");
-  res.header("Content-Disposition", `attachment; filename="${title}.mp4"`);
-  ytdl(url, { quality: itag }).pipe(res);
+  try {
+    const info = await ytdl.getInfo(url);
+    const title = info.videoDetails.title.replace(/[^\w\s]/gi, '');
+    const format = ytdl.chooseFormat(info.formats, { quality: itag });
+
+    if (!format) {
+      return res.status(400).json({ error: 'Invalid format selected' });
+    }
+
+    res.setHeader('Content-Disposition', `attachment; filename="${title}.mp4"`);
+    res.setHeader('Content-Type', 'video/mp4');
+
+    ytdl(url, { format }).pipe(res);
+  } catch (error) {
+    console.error('Download error:', error);
+    res.status(500).json({ error: 'Failed to download video' });
+  }
 });
 
-app.listen(3000, () => console.log("Server running on http://localhost:3000"));
-
+app.listen(PORT, () => {
+  console.log(`Server is running at http://localhost:${PORT}`);
+});
