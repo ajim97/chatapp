@@ -15,7 +15,7 @@ app.post('/download', async (req, res) => {
 
   try {
     const info = await ytdl.getInfo(url);
-    const title = info.videoDetails.title.replace(/[^\w\s]/gi, '_'); // sanitize title
+    const title = info.videoDetails.title.replace(/[^\w\s]/gi, '_'); // sanitize title hello world welcome to my new website
 
     res.header('Content-Disposition', `attachment; filename="${title}.mp4"`);
 
