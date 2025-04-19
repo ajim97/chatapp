@@ -3,29 +3,36 @@ const cors = require('cors');
 const ytdl = require('ytdl-core');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 5000;
 
 app.use(cors());
 
-app.get('/download', async (req, res) => {
+// 📥 Get video info and direct download URL
+app.get('/video', async (req, res) => {
   const videoUrl = req.query.url;
+
   if (!ytdl.validateURL(videoUrl)) {
-    return res.status(400).send('Invalid YouTube URL');
+    return res.status(400).json({ error: 'Invalid YouTube URL' });
   }
 
   try {
     const info = await ytdl.getInfo(videoUrl);
-    const title = info.videoDetails.title.replace(/[\/\\?%*:|"<>]/g, '-');
-    const format = ytdl.chooseFormat(info.formats, { quality: '18' }); // MP4 360p
+    const format = ytdl.chooseFormat(info.formats, {
+      quality: '18', // 360p
+      filter: 'videoandaudio',
+    });
 
-    res.header('Content-Disposition', `attachment; filename="${title}.mp4"`);
-    ytdl(videoUrl, { format }).pipe(res);
+    res.json({
+      title: info.videoDetails.title,
+      thumbnail: info.videoDetails.thumbnails.pop().url,
+      downloadUrl: format.url,
+    });
   } catch (err) {
-    console.error('Download error:', err.message);
-    res.status(500).send('Download failed');
+    console.error('Error:', err.message);
+    res.status(500).json({ error: 'Failed to retrieve video info' });
   }
 });
 
 app.listen(PORT, () => {
-  console.log(`Server is running on port ${PORT}`);
+  console.log(`YouTube downloader backend running on port ${PORT}`);
 });
