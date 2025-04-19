@@ -1,35 +1,20 @@
+// server.js
 const express = require('express');
-const cors = require('cors');
-
-// Prevent auto updates causing errors
-process.env.YTDL_NO_UPDATE = 'true';
 const ytdl = require('ytdl-core');
-
+const cors = require('cors');
 const app = express();
+
 app.use(cors());
-app.use(express.json());
 
-app.post('/download', async (req, res) => {
-  const { url } = req.body;
+app.get('/download', async (req, res) => {
+  const videoUrl = req.query.url;
+  if (!ytdl.validateURL(videoUrl)) return res.status(400).send('Invalid URL');
 
-  if (!url || !ytdl.validateURL(url)) {
-    return res.status(400).send('Invalid YouTube URL');
-  }
+  const info = await ytdl.getInfo(videoUrl);
+  const format = ytdl.chooseFormat(info.formats, { quality: '18' }); // 18 = 360p MP4
 
-  try {
-    const info = await ytdl.getInfo(url);
-    const format = ytdl.chooseFormat(info.formats, {
-      quality: 'highest',
-      filter: 'audioandvideo',
-    });
-
-    res.setHeader('Content-Disposition', 'attachment; filename="video.mp4"');
-    ytdl.downloadFromInfo(info, { format }).pipe(res);
-  } catch (error) {
-    console.error('YTDL Error:', error.message);
-    res.status(500).send('Error downloading video');
-  }
+  res.header('Content-Disposition', `attachment; filename="${info.videoDetails.title}.mp4"`);
+  ytdl(videoUrl, { format }).pipe(res);
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.listen(3000, () => console.log('Server running on http://localhost:3000'));
