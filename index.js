@@ -4,7 +4,8 @@ const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
 const { exec } = require('child_process');
-const ytdlp = require('yt-dlp-exec').raw;
+const ytdlp = require('yt-dlp-exec');
+
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -20,11 +21,12 @@ app.post('/info', async (req, res) => {
   if (!url) return res.status(400).json({ error: 'URL is required' });
 
   try {
-    const result = await ytdlp(url, {
-      dumpSingleJson: true,
-      noWarnings: true,
-      binary: ytDlpPath,
-    });
+   const result = await ytdlp(url, {
+  dumpSingleJson: true,
+  noWarnings: true,
+  binary: ytDlpPath, // path to local yt-dlp binary
+});
+
 
     const json = JSON.parse(result.stdout);
     const formats = json.formats.map((f, index) => ({
