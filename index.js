@@ -1,8 +1,8 @@
 const express = require('express');
 const { exec } = require('child_process');
-const path = require('path');
-const fs = require('fs');
 const cors = require('cors');
+const fs = require('fs');
+const path = require('path');
 
 const app = express();
 app.use(cors());
@@ -11,72 +11,64 @@ app.use(express.json());
 const DOWNLOADS_DIR = path.join(__dirname, 'downloads');
 if (!fs.existsSync(DOWNLOADS_DIR)) fs.mkdirSync(DOWNLOADS_DIR);
 
-// Get video info and available formats (filtered)
+// 🎯 Fetch Video Info (title, thumbnail, format options)
 app.post('/info', (req, res) => {
-  const videoUrl = req.body.url;
-  if (!videoUrl) return res.status(400).send('URL is required');
+  const { url } = req.body;
+  if (!url) return res.status(400).send('URL required');
 
-  const command = `yt-dlp -F "${videoUrl}"`;
-
+  const command = `yt-dlp -F "${url}"`;
   exec(command, (err, stdout) => {
     if (err) {
-      console.error('Format fetch error:', err);
-      return res.status(500).send('Failed to get formats');
+      console.error('Info fetch error:', err);
+      return res.status(500).send('Failed to fetch info');
+    }
+
+    const formats = [];
+    const lines = stdout.split('\n');
+    for (const line of lines) {
+      if (line.includes('mp4') && /(360|720|1080)p/.test(line)) {
+        const parts = line.trim().split(/\s+/);
+        formats.push({
+          formatId: parts[0],
+          resolution: parts[2],
+        });
+      }
     }
 
     // Get title and thumbnail
-    const titleCmd = `yt-dlp --print "%(title)s" --print "%(thumbnail)s" "${videoUrl}"`;
-    exec(titleCmd, (infoErr, infoOut) => {
-      if (infoErr) {
-        console.error('Info fetch error:', infoErr);
-        return res.status(500).send('Failed to fetch video info');
+    exec(`yt-dlp --print "%(title)s\n%(thumbnail)s" "${url}"`, (err, out) => {
+      if (err) {
+        console.error('Metadata error:', err);
+        return res.status(500).send('Failed to get metadata');
       }
 
-      const [title, thumbnail] = infoOut.trim().split('\n');
-
-      const formats = stdout.split('\n').filter(line =>
-        /\b(360|720|1080)p\b/.test(line) && /video only|avc1|mp4/.test(line)
-      ).map(line => {
-        const parts = line.trim().split(/\s+/);
-        const formatId = parts[0];
-        const resolution = parts.find(p => /\d+p/.test(p));
-        return { formatId, resolution };
-      });
-
+      const [title, thumbnail] = out.trim().split('\n');
       res.json({ title, thumbnail, formats });
     });
   });
 });
 
-// Download video in selected format
+// 🎯 Download Selected Format
 app.post('/download', (req, res) => {
   const { url, format } = req.body;
   if (!url || !format) return res.status(400).send('URL and format required');
 
-  const timestamp = Date.now();
-  const outputTemplate = path.join(DOWNLOADS_DIR, `video_${timestamp}.%(ext)s`);
+  const filename = `video_${Date.now()}.mp4`;
+  const outputPath = path.join(DOWNLOADS_DIR, filename);
 
-  const command = `yt-dlp -f "${format}+bestaudio" -o "${outputTemplate}" "${url}"`;
+  const command = `yt-dlp -f "${format}+bestaudio" --merge-output-format mp4 -o "${outputPath}" "${url}"`;
 
-  exec(command, (error, stdout, stderr) => {
+  exec(command, (error) => {
     if (error) {
       console.error('Download error:', error);
-      console.error('stderr:', stderr);
       return res.status(500).send('Failed to download video');
     }
 
-    const prefix = `video_${timestamp}`;
-    const files = fs.readdirSync(DOWNLOADS_DIR);
-    const actualFile = files.find(f => f.startsWith(prefix));
-    const actualPath = actualFile ? path.join(DOWNLOADS_DIR, actualFile) : null;
-
-    if (!actualPath || !fs.existsSync(actualPath)) {
-      return res.status(404).send('File not found');
-    }
-
-    res.download(actualPath, actualFile, err => {
-      if (err) console.error('Send error:', err);
-      fs.unlink(actualPath, () => {});
+    res.download(outputPath, filename, (err) => {
+      if (err) {
+        console.error('Send error:', err);
+      }
+      fs.unlink(outputPath, () => {});
     });
   });
 });
