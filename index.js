@@ -24,8 +24,8 @@ app.post('/info', async (req, res) => {
    const result = await ytdlp(url, {
   dumpSingleJson: true,
   noWarnings: true,
-  binary: ytDlpPath, // path to local yt-dlp binary
 });
+
 
 
     const json = JSON.parse(result.stdout);
