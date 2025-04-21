@@ -1,86 +1,78 @@
 const express = require('express');
-const { exec } = require('child_process');
+const cors = require('cors');
 const path = require('path');
 const fs = require('fs');
-const cors = require('cors');
+const { exec } = require('child_process');
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
 const DOWNLOADS_DIR = path.join(__dirname, 'downloads');
+const YTDLP_PATH = path.join(__dirname, 'bin', 'yt-dlp'); // Make sure the yt-dlp binary exists here
+
+// Create downloads directory if it doesn't exist
 if (!fs.existsSync(DOWNLOADS_DIR)) fs.mkdirSync(DOWNLOADS_DIR);
 
-// Get video info and available formats (filtered)
+// 🎯 GET VIDEO INFO (title, thumbnail, available formats)
 app.post('/info', (req, res) => {
-  const videoUrl = req.body.url;
-  if (!videoUrl) return res.status(400).send('URL is required');
+  const { url } = req.body;
+  if (!url) return res.status(400).send('URL is required');
 
-  const command = `yt-dlp -F "${videoUrl}"`;
-
-  exec(command, (err, stdout) => {
-    if (err) {
-      console.error('Format fetch error:', err);
-      return res.status(500).send('Failed to get formats');
+  const command = `"${YTDLP_PATH}" -j "${url}"`;
+  exec(command, (error, stdout) => {
+    if (error) {
+      console.error('Info fetch error:', error);
+      return res.status(500).send('Failed to fetch video info');
     }
 
-    // Get title and thumbnail
-    const titleCmd = `yt-dlp --print "%(title)s" --print "%(thumbnail)s" "${videoUrl}"`;
-    exec(titleCmd, (infoErr, infoOut) => {
-      if (infoErr) {
-        console.error('Info fetch error:', infoErr);
-        return res.status(500).send('Failed to fetch video info');
-      }
+    try {
+      const data = JSON.parse(stdout);
+      const filteredFormats = data.formats
+        .filter(f => ['360', '720', '1080'].some(q => f.format_note?.includes(q)))
+        .map(f => ({
+          format_id: f.format_id,
+          resolution: f.format_note || f.format,
+          ext: f.ext,
+        }));
 
-      const [title, thumbnail] = infoOut.trim().split('\n');
-
-      const formats = stdout.split('\n').filter(line =>
-        /\b(360|720|1080)p\b/.test(line) && /video only|avc1|mp4/.test(line)
-      ).map(line => {
-        const parts = line.trim().split(/\s+/);
-        const formatId = parts[0];
-        const resolution = parts.find(p => /\d+p/.test(p));
-        return { formatId, resolution };
+      res.json({
+        title: data.title,
+        thumbnail: data.thumbnail,
+        formats: filteredFormats,
       });
-
-      res.json({ title, thumbnail, formats });
-    });
+    } catch (e) {
+      console.error('Parsing error:', e);
+      res.status(500).send('Failed to parse video info');
+    }
   });
 });
 
-// Download video in selected format
+// 🎯 DOWNLOAD SELECTED FORMAT
 app.post('/download', (req, res) => {
-  const { url, format } = req.body;
-  if (!url || !format) return res.status(400).send('URL and format required');
+  const { url, format_id } = req.body;
+  if (!url || !format_id) return res.status(400).send('URL and format_id are required');
 
-  const timestamp = Date.now();
-  const outputTemplate = path.join(DOWNLOADS_DIR, `video_${timestamp}.%(ext)s`);
+  const filename = `video_${Date.now()}.mp4`;
+  const outputPath = path.join(DOWNLOADS_DIR, filename);
 
-  const command = `yt-dlp -f "${format}+bestaudio" -o "${outputTemplate}" "${url}"`;
+  const command = `"${YTDLP_PATH}" -f ${format_id}+bestaudio --merge-output-format mp4 -o "${outputPath}" "${url}"`;
 
-  exec(command, (error, stdout, stderr) => {
+  exec(command, (error) => {
     if (error) {
       console.error('Download error:', error);
-      console.error('stderr:', stderr);
       return res.status(500).send('Failed to download video');
     }
 
-    const prefix = `video_${timestamp}`;
-    const files = fs.readdirSync(DOWNLOADS_DIR);
-    const actualFile = files.find(f => f.startsWith(prefix));
-    const actualPath = actualFile ? path.join(DOWNLOADS_DIR, actualFile) : null;
-
-    if (!actualPath || !fs.existsSync(actualPath)) {
-      return res.status(404).send('File not found');
-    }
-
-    res.download(actualPath, actualFile, err => {
-      if (err) console.error('Send error:', err);
-      fs.unlink(actualPath, () => {});
+    // Serve file for download
+    res.download(outputPath, filename, (err) => {
+      if (err) {
+        console.error('Send error:', err);
+      }
+      fs.unlink(outputPath, () => {}); // Clean up file after sending
     });
   });
 });
 
-app.listen(5000, () => {
-  console.log('Server running on http://localhost:5000');
-});
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
